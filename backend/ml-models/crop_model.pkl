@@ -1,0 +1,1 @@
+Mock crop model data - this would normally be a trained pickle file
