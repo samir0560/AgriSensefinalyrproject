@@ -301,13 +301,15 @@ export const loginUser = async (email, password) => {
 
 export const getCurrentUser = async (token) => {
   try {
-    const response = await axios.get(`${API_BASE_URL}/auth/me`, {
-      headers: { Authorization: `Bearer ${token}` }
+    const response = await axios.get(`${API_BASE_URL}/api/auth/me`, {
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
     });
     return response.data;
   } catch (error) {
-    console.error('Error getting current user:', error);
-    throw error;
+    console.error("Error getting current user:", error);
+    return null;
   }
 };
 
