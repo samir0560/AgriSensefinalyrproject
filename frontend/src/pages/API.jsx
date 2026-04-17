@@ -168,7 +168,7 @@ const API = () => {
 
         <div className="api-info-section">
           <h2>{t('apiBaseUrl')}</h2>
-          <code className="base-url">http://localhost:5000/api</code>
+          <code className="base-url">https://agrisensefinalyrprojectt.onrender.com</code>
           
           <h2>{t('apiAuthentication')}</h2>
           <p>{t('apiAuthNote')}</p>
