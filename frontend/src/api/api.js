@@ -274,7 +274,7 @@ export const getAdminProfile = async () => {
 // User auth API
 export const registerUser = async (email, password, name) => {
   try {
-    const response = await axios.post(`${API_BASE_URL}/auth/register`, {
+    const response = await axios.post(`${API_BASE_URL}/api/auth/register`, {
       email,
       password,
       name: name || undefined
