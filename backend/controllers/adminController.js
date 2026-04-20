@@ -112,7 +112,6 @@ const updateAdminCredentials = async (req, res) => {
     });
   }
 };
-
 // Admin login
 const adminLogin = async (req, res) => {
   try {
@@ -148,17 +147,20 @@ const adminLogin = async (req, res) => {
     admin.lastLogin = Date.now();
     await admin.save();
 
-    // Generate JWT token (optional, for authentication)
-const token = jwt.sign(
-  { id: admin._id },
-  process.env.JWT_SECRET,
-  { expiresIn: '7d' }
-);
+    // Generate JWT token only if JWT_SECRET is set
+    let token = null;
+    if (process.env.JWT_SECRET) {
+      token = jwt.sign(
+        { id: admin._id, username: admin.username },
+        process.env.JWT_SECRET,
+        { expiresIn: '7d' }
+      );
+    }
 
     res.json({
       success: true,
       message: 'Login successful',
-      token,
+      token, // Can be null if JWT_SECRET not set
       admin: {
         id: admin._id,
         username: admin.username,
@@ -169,7 +171,8 @@ const token = jwt.sign(
     console.error('Error during admin login:', error);
     res.status(500).json({
       success: false,
-      message: 'Server error during login'
+      message: 'Server error during login',
+      error: error.message // Include error message for debugging
     });
   }
 };
