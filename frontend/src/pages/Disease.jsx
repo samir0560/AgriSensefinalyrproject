@@ -92,7 +92,7 @@ const Disease = () => {
 
   // Improved plant detection with better prompting
   const checkIfPlant = async (base64Image) => {
-    const GEMINI_API_KEY = 'AIzaSyDfIe8hVFhX0lGIExWLr28VeGwN2qzFZmU';
+    const GEMINI_API_KEY = 'AIzaSyAjz2qRqtmqeCs-3KTr8YLdj-_DoHaTO6c';
     const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
     
     const prompt = `You are an agricultural expert. Look at this image carefully. 
