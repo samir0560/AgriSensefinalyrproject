@@ -32,9 +32,8 @@ const Disease = () => {
     });
   };
 
-  // Show alert without SweetAlert
+  // Show custom alert
   const showAlert = (message, isError = false) => {
-    // Create custom alert div
     const alertDiv = document.createElement('div');
     alertDiv.style.cssText = `
       position: fixed;
@@ -53,7 +52,6 @@ const Disease = () => {
     `;
     alertDiv.textContent = message;
     
-    // Add animation styles if not exists
     if (!document.querySelector('#alert-styles')) {
       const style = document.createElement('style');
       style.id = 'alert-styles';
@@ -131,20 +129,29 @@ const Disease = () => {
     }
   };
 
-  // Detect plant disease using Gemini
+  // Detect plant disease using Gemini - REAL DATA ONLY
   const detectPlantDisease = async (base64Image) => {
     const GEMINI_API_KEY = 'AIzaSyDfIe8hVFhX0lGIExWLr28VeGwN2qzFZmU';
     const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
     
-    const prompt = `You are an agricultural plant disease detection expert. Analyze this plant image and provide a detailed disease diagnosis. 
-    Respond in valid JSON format ONLY with this exact structure:
+    const prompt = `You are an expert agricultural plant pathologist. Analyze this plant image and provide a REAL, ACCURATE disease diagnosis based on visible symptoms.
+    
+    Return ONLY valid JSON in this exact format (no other text):
     {
-      "disease": "name of disease or 'Healthy' if no disease detected",
-      "confidence": number between 0-100,
-      "description": "detailed description of symptoms and what you observe",
-      "treatment": "detailed treatment recommendations and prevention methods"
+      "disease": "actual disease name or 'Healthy - No Disease Detected'",
+      "confidence": 85,
+      "description": "detailed description of visible symptoms on this specific plant",
+      "treatment": "specific treatment recommendations for this exact condition",
+      "symptoms_observed": ["symptom1", "symptom2", "symptom3"],
+      "severity": "Mild/Moderate/Severe"
     }
-    Make sure the response is ONLY valid JSON, no other text.`;
+    
+    IMPORTANT: 
+    - Analyze the actual image and provide REAL diagnosis based on what you see
+    - Do NOT use generic responses
+    - If the plant appears healthy, indicate that clearly
+    - Provide specific, actionable advice
+    - Confidence should reflect your certainty in the diagnosis`;
     
     try {
       const response = await fetch(API_URL, {
@@ -172,8 +179,16 @@ const Disease = () => {
         })
       });
       
+      if (!response.ok) {
+        throw new Error(`API Error: ${response.status}`);
+      }
+      
       const data = await response.json();
       const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      
+      if (!textResponse) {
+        throw new Error('No response from Gemini API');
+      }
       
       // Parse JSON from response
       let parsedResponse;
@@ -186,14 +201,19 @@ const Disease = () => {
         if (jsonMatch) {
           parsedResponse = JSON.parse(jsonMatch[0]);
         } else {
-          throw new Error('Invalid response format');
+          throw new Error('Invalid response format from API');
         }
+      }
+      
+      // Validate required fields
+      if (!parsedResponse.disease || !parsedResponse.description || !parsedResponse.treatment) {
+        throw new Error('Incomplete response from API');
       }
       
       return parsedResponse;
     } catch (error) {
       console.error('Error detecting disease:', error);
-      throw new Error('Failed to analyze plant disease');
+      throw new Error(`Disease detection failed: ${error.message}`);
     }
   };
 
@@ -212,31 +232,32 @@ const Disease = () => {
       const base64Image = await fileToBase64(selectedImage);
       
       // First check if it's a plant
-      showAlert('Checking if image contains a plant...', false);
+      showAlert('🔍 Analyzing image content...', false);
       const isPlant = await checkIfPlant(base64Image);
       
       if (!isPlant) {
         showAlert('❌ This does not appear to be a plant or crop. Please upload an image of a plant, leaf, flower, fruit, or vegetable for disease detection.', true);
         setLoading(false);
-        // Reset for new upload
         setSelectedImage(null);
         setPreview(null);
         setResult(null);
         return;
       }
       
-      // Detect disease
-      showAlert('✅ Plant detected! Analyzing for diseases...', false);
+      // Detect disease using Gemini - REAL DATA
+      showAlert('🌱 Plant detected! Analyzing for diseases...', false);
       const diseaseResult = await detectPlantDisease(base64Image);
       
       setResult({
         disease: diseaseResult.disease,
         confidence: diseaseResult.confidence,
         description: diseaseResult.description,
-        treatment: diseaseResult.treatment
+        treatment: diseaseResult.treatment,
+        symptoms_observed: diseaseResult.symptoms_observed || [],
+        severity: diseaseResult.severity || 'Not specified'
       });
       
-      showAlert(`Analysis complete! ${diseaseResult.disease === 'Healthy' ? 'Plant appears healthy! 🌱' : 'Disease detected. Check results below.'}`, false);
+      showAlert(`✅ Analysis complete! ${diseaseResult.disease === 'Healthy - No Disease Detected' ? 'Your plant appears healthy! 🌿' : 'Diagnosis ready. See recommendations below.'}`, false);
       
       // Log to backend if user is logged in
       if (token) {
@@ -244,7 +265,7 @@ const Disease = () => {
           featureType: 'disease',
           request: { 
             imageFileName: selectedImage.name,
-            source: 'gemini_api'
+            timestamp: new Date().toISOString()
           },
           response: { 
             success: true, 
@@ -256,31 +277,29 @@ const Disease = () => {
     } catch (err) {
       console.error('Error:', err);
       setError(err.message || 'Failed to analyze image');
-      showAlert('Error analyzing image. Please try again with a clearer plant photo.', true);
+      showAlert(`❌ Error: ${err.message || 'Failed to analyze. Please try again with a clearer plant photo.'}`, true);
     } finally {
       setLoading(false);
     }
   };
 
-  // Reset and upload new image
   const handleUploadNew = () => {
     setSelectedImage(null);
     setPreview(null);
     setResult(null);
     setError(null);
-    // Trigger file input click
     document.getElementById('image-input').click();
   };
 
   return (
-    <div className="disease-page">
+    <div className="disease-page" style={{ padding: '20px', maxWidth: '1200px', margin: '0 auto' }}>
       <div className="container">
-        <h1>{t('diseaseDetectionTitle') || 'Plant Disease Detection'}</h1>
-        <p>{t('diseaseDetectionDesc') || 'Upload a photo of your plant to detect diseases using AI'}</p>
+        <h1>{t('diseaseDetectionTitle') || '🌿 AI Plant Disease Detection'}</h1>
+        <p>{t('diseaseDetectionDesc') || 'Upload a clear photo of your plant for real-time disease diagnosis using Google Gemini AI'}</p>
         
         <form onSubmit={handleSubmit} className="input-form">
           <div className="form-group">
-            <label htmlFor="image">{t('uploadImage') || 'Upload Image'}</label>
+            <label htmlFor="image">{t('uploadImage') || '📸 Upload Plant Image'}</label>
             <input
               type="file"
               id="image-input"
@@ -288,12 +307,37 @@ const Disease = () => {
               accept="image/*"
               onChange={handleImageChange}
               required
-              style={{ display: 'block' }}
+              style={{ 
+                display: 'block', 
+                padding: '10px', 
+                border: '2px dashed #ccc', 
+                borderRadius: '8px',
+                width: '100%',
+                cursor: 'pointer'
+              }}
             />
+            <small style={{ color: '#666', display: 'block', marginTop: '8px' }}>
+              Supported formats: JPG, PNG, JPEG (Max 10MB)
+            </small>
           </div>
           
-          <button type="submit" className="btn btn-primary" disabled={loading}>
-            {loading ? (t('detecting') || 'Detecting...') : (t('detectDisease') || 'Detect Disease')}
+          <button 
+            type="submit" 
+            className="btn btn-primary" 
+            disabled={loading}
+            style={{
+              backgroundColor: '#4caf50',
+              color: 'white',
+              padding: '12px 24px',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: loading ? 'not-allowed' : 'pointer',
+              fontSize: '16px',
+              marginTop: '16px',
+              opacity: loading ? 0.6 : 1
+            }}
+          >
+            {loading ? '🔍 Analyzing...' : '🔬 Detect Disease'}
           </button>
         </form>
         
@@ -301,30 +345,59 @@ const Disease = () => {
           <div className="error" style={{
             backgroundColor: '#ffebee',
             color: '#c62828',
-            padding: '12px',
+            padding: '16px',
             borderRadius: '8px',
-            marginTop: '16px'
+            marginTop: '20px',
+            borderLeft: '4px solid #c62828'
           }}>
-            {error}
+            <strong>Error:</strong> {error}
           </div>
         )}
         
-        {preview && !result && (
-          <div className="image-preview">
+        {loading && (
+          <div style={{ textAlign: 'center', marginTop: '40px' }}>
+            <div style={{ 
+              display: 'inline-block',
+              width: '50px',
+              height: '50px',
+              border: '4px solid #f3f3f3',
+              borderTop: '4px solid #4caf50',
+              borderRadius: '50%',
+              animation: 'spin 1s linear infinite'
+            }}></div>
+            <p style={{ marginTop: '16px', color: '#666' }}>Analyzing plant image with AI...</p>
+            <style>{`
+              @keyframes spin {
+                0% { transform: rotate(0deg); }
+                100% { transform: rotate(360deg); }
+              }
+            `}</style>
+          </div>
+        )}
+        
+        {preview && !result && !loading && (
+          <div className="image-preview" style={{ marginTop: '30px' }}>
             <h2>{t('selectedImage') || 'Selected Image'}</h2>
-            <img src={preview} alt="Preview" style={{ maxWidth: '100%', maxHeight: '400px', borderRadius: '8px' }} />
+            <img src={preview} alt="Preview" style={{ 
+              maxWidth: '100%', 
+              maxHeight: '400px', 
+              borderRadius: '8px',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+            }} />
           </div>
         )}
         
         {result && (
-          <div className="result">
+          <div className="result" style={{ marginTop: '40px' }}>
             <div style={{ 
               display: 'flex', 
               justifyContent: 'space-between', 
               alignItems: 'center',
-              marginBottom: '20px'
+              marginBottom: '20px',
+              flexWrap: 'wrap',
+              gap: '10px'
             }}>
-              <h2>{t('detectionResult') || 'Detection Result'}</h2>
+              <h2 style={{ margin: 0 }}>{t('detectionResult') || '📋 Diagnosis Results'}</h2>
               <button 
                 onClick={handleUploadNew}
                 className="btn btn-secondary"
@@ -333,46 +406,110 @@ const Disease = () => {
                   color: 'white',
                   border: 'none',
                   padding: '10px 20px',
-                  borderRadius: '5px',
-                  cursor: 'pointer'
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  fontSize: '14px'
                 }}
               >
-                {t('uploadNew') || '+ Upload New Image'}
+                📸 + Upload New Image
               </button>
             </div>
             
-            <div className="card" style={{ marginBottom: '1rem', padding: '1.5rem', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}>
-              <h3 style={{ 
-                color: result.disease === 'Healthy' ? '#2e7d32' : '#c62828', 
-                marginBottom: '0.5rem',
-                fontSize: '1.5rem'
+            <div className="card" style={{ 
+              marginBottom: '1rem', 
+              padding: '24px', 
+              borderRadius: '12px', 
+              boxShadow: '0 4px 16px rgba(0,0,0,0.1)',
+              backgroundColor: 'white'
+            }}>
+              <div style={{
+                padding: '16px',
+                borderRadius: '8px',
+                backgroundColor: result.disease === 'Healthy - No Disease Detected' ? '#e8f5e9' : '#fff3e0',
+                marginBottom: '20px'
               }}>
-                {t('diseaseDetected') || 'Disease Detected'}: {result.disease}
-              </h3>
-              
-              <p><strong>{t('confidenceLevel') || 'Confidence Level'}:</strong> 
-                <span style={{ 
-                  display: 'inline-block',
-                  marginLeft: '8px',
-                  padding: '2px 8px',
-                  backgroundColor: result.confidence > 80 ? '#4caf50' : result.confidence > 60 ? '#ff9800' : '#f44336',
-                  color: 'white',
-                  borderRadius: '4px',
-                  fontSize: '14px'
+                <h3 style={{ 
+                  color: result.disease === 'Healthy - No Disease Detected' ? '#2e7d32' : '#e65100', 
+                  marginBottom: '8px',
+                  fontSize: '24px'
                 }}>
-                  {result.confidence}%
-                </span>
+                  {result.disease === 'Healthy - No Disease Detected' ? '✅ ' : '⚠️ '}
+                  {result.disease}
+                </h3>
+                
+                {result.severity !== 'Not specified' && result.disease !== 'Healthy - No Disease Detected' && (
+                  <p><strong>Severity Level:</strong> 
+                    <span style={{
+                      display: 'inline-block',
+                      marginLeft: '8px',
+                      padding: '4px 12px',
+                      borderRadius: '20px',
+                      backgroundColor: result.severity === 'Mild' ? '#4caf50' : result.severity === 'Moderate' ? '#ff9800' : '#f44336',
+                      color: 'white',
+                      fontSize: '14px'
+                    }}>
+                      {result.severity}
+                    </span>
+                  </p>
+                )}
+                
+                <p><strong>Confidence Level:</strong> 
+                  <span style={{ 
+                    display: 'inline-block',
+                    marginLeft: '8px',
+                    padding: '4px 12px',
+                    backgroundColor: result.confidence > 80 ? '#4caf50' : result.confidence > 60 ? '#ff9800' : '#f44336',
+                    color: 'white',
+                    borderRadius: '20px',
+                    fontSize: '14px'
+                  }}>
+                    {result.confidence}%
+                  </span>
+                </p>
+              </div>
+              
+              {result.symptoms_observed && result.symptoms_observed.length > 0 && (
+                <div style={{ marginBottom: '20px' }}>
+                  <strong>Symptoms Observed:</strong>
+                  <ul style={{ marginTop: '8px', paddingLeft: '20px' }}>
+                    {result.symptoms_observed.map((symptom, index) => (
+                      <li key={index} style={{ marginBottom: '4px' }}>{symptom}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              
+              <p style={{ marginBottom: '16px', lineHeight: '1.6' }}>
+                <strong>📖 Description:</strong><br />
+                {result.description}
               </p>
               
-              <p><strong>{t('description') || 'Description'}:</strong> {result.description}</p>
+              <p style={{ marginBottom: '16px', lineHeight: '1.6' }}>
+                <strong>💊 Treatment Recommendations:</strong><br />
+                {result.treatment}
+              </p>
               
-              <p><strong>{t('treatmentAdvice') || 'Treatment Advice'}:</strong> {result.treatment}</p>
+              <div style={{ 
+                marginTop: '20px',
+                padding: '12px',
+                backgroundColor: '#f5f5f5',
+                borderRadius: '8px',
+                fontSize: '14px',
+                color: '#666'
+              }}>
+                <strong>ℹ️ Note:</strong> This analysis is generated by AI and should be verified by a professional agronomist for critical decisions.
+              </div>
             </div>
             
             {preview && (
-              <div className="image-preview" style={{ marginTop: '20px' }}>
+              <div className="image-preview" style={{ marginTop: '20px', textAlign: 'center' }}>
                 <h3>Analyzed Image</h3>
-                <img src={preview} alt="Analyzed plant" style={{ maxWidth: '100%', maxHeight: '300px', borderRadius: '8px' }} />
+                <img src={preview} alt="Analyzed plant" style={{ 
+                  maxWidth: '100%', 
+                  maxHeight: '300px', 
+                  borderRadius: '8px',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+                }} />
               </div>
             )}
           </div>
