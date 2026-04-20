@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE_URL = 'https://agrisensefinalyrprojectt.onrender.com';
+const API_BASE_URL = 'https://agrisensefinalyrprojectt.onrender.com/api';
 
 const authHeaders = (token) => (token ? { Authorization: `Bearer ${token}` } : {});
 
@@ -274,7 +274,7 @@ export const getAdminProfile = async () => {
 // User auth API
 export const registerUser = async (email, password, name) => {
   try {
-    const response = await axios.post(`${API_BASE_URL}/api/auth/register`, {
+    const response = await axios.post(`${API_BASE_URL}/auth/register`, {
       email,
       password,
       name: name || undefined
@@ -285,10 +285,9 @@ export const registerUser = async (email, password, name) => {
     return { success: false, message: msg || error.message };
   }
 };
-
 export const loginUser = async (email, password) => {
   try {
-    const response = await axios.post(`${API_BASE_URL}/api/auth/login`, {
+    const response = await axios.post(`${API_BASE_URL}/auth/login`, {
       email,
       password
     });
