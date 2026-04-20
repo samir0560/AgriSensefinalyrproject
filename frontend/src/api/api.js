@@ -57,7 +57,10 @@ export const predictDisease = async (imageFile, token = null) => {
     formData.append('image', imageFile);
 
     const response = await axios.post(`${API_BASE_URL}/disease/predict`, formData, {
-      headers: authHeaders(token)
+      headers: {
+        ...authHeaders(token),
+        'Content-Type': 'multipart/form-data'
+      }
     });
     return response.data;
   } catch (error) {
@@ -170,7 +173,9 @@ export const getChatHistory = async (token) => {
 
 export const getNearbySoilData = async (lat, lon, radius = 10) => {
   try {
-    const response = await axios.get(`${API_BASE_URL}/soil/nearby?lat=${lat}&lon=${lon}&radius=${radius}`);
+    const response = await axios.get(`${API_BASE_URL}/soil/nearby`, {
+      params: { lat, lon, radius }
+    });
     return response.data;
   } catch (error) {
     console.error('Error getting nearby soil data:', error);
@@ -188,9 +193,11 @@ export const getSoilDataById = async (id) => {
   }
 };
 
-export const updateSoilData = async (id, data) => {
+export const updateSoilData = async (id, data, token = null) => {
   try {
-    const response = await axios.put(`${API_BASE_URL}/soil/${id}`, data);
+    const response = await axios.put(`${API_BASE_URL}/soil/${id}`, data, {
+      headers: authHeaders(token)
+    });
     return response.data;
   } catch (error) {
     console.error('Error updating soil data:', error);
@@ -198,9 +205,11 @@ export const updateSoilData = async (id, data) => {
   }
 };
 
-export const deleteSoilData = async (id) => {
+export const deleteSoilData = async (id, token = null) => {
   try {
-    const response = await axios.delete(`${API_BASE_URL}/soil/${id}`);
+    const response = await axios.delete(`${API_BASE_URL}/soil/${id}`, {
+      headers: authHeaders(token)
+    });
     return response.data;
   } catch (error) {
     console.error('Error deleting soil data:', error);
@@ -221,9 +230,11 @@ export const getSoilAnalysis = async (data, token = null) => {
 };
 
 // Admin API
-export const getRecentActivities = async () => {
+export const getRecentActivities = async (token = null) => {
   try {
-    const response = await axios.get(`${API_BASE_URL}/admin/activities`);
+    const response = await axios.get(`${API_BASE_URL}/admin/activities`, {
+      headers: authHeaders(token)
+    });
     return response.data;
   } catch (error) {
     console.error('Error getting recent activities:', error);
@@ -231,9 +242,11 @@ export const getRecentActivities = async () => {
   }
 };
 
-export const logActivity = async (activityData) => {
+export const logActivity = async (activityData, token = null) => {
   try {
-    const response = await axios.post(`${API_BASE_URL}/admin/activity`, activityData);
+    const response = await axios.post(`${API_BASE_URL}/admin/activity`, activityData, {
+      headers: authHeaders(token)
+    });
     return response.data;
   } catch (error) {
     console.error('Error logging activity:', error);
@@ -241,9 +254,11 @@ export const logActivity = async (activityData) => {
   }
 };
 
-export const updateAdminCredentials = async (credentials) => {
+export const updateAdminCredentials = async (credentials, token = null) => {
   try {
-    const response = await axios.put(`${API_BASE_URL}/admin/credentials`, credentials);
+    const response = await axios.put(`${API_BASE_URL}/admin/credentials`, credentials, {
+      headers: authHeaders(token)
+    });
     return response.data;
   } catch (error) {
     console.error('Error updating admin credentials:', error);
@@ -261,9 +276,11 @@ export const adminLogin = async (loginData) => {
   }
 };
 
-export const getAdminProfile = async () => {
+export const getAdminProfile = async (token = null) => {
   try {
-    const response = await axios.get(`${API_BASE_URL}/admin/profile`);
+    const response = await axios.get(`${API_BASE_URL}/admin/profile`, {
+      headers: authHeaders(token)
+    });
     return response.data;
   } catch (error) {
     console.error('Error getting admin profile:', error);
@@ -285,6 +302,7 @@ export const registerUser = async (email, password, name) => {
     return { success: false, message: msg || error.message };
   }
 };
+
 export const loginUser = async (email, password) => {
   try {
     const response = await axios.post(`${API_BASE_URL}/auth/login`, {
@@ -324,7 +342,7 @@ export const updateUserProfile = async (token, data) => {
   }
 };
 
-/** Log a feature result computed on the client (e.g. simulated disease detection) for signed-in users. */
+// Log a feature result computed on the client for signed-in users
 export const logClientFeatureResult = async (token, { featureType, request, response }) => {
   if (!token) return;
   try {
@@ -338,7 +356,7 @@ export const logClientFeatureResult = async (token, { featureType, request, resp
   }
 };
 
-/** List saved feature API results for the logged-in user (newest first). */
+// List saved feature API results for the logged-in user (newest first)
 export const getMyFeatureResponses = async (token, { limit = 50, skip = 0 } = {}) => {
   if (!token) {
     return { success: false, data: [], total: 0 };
@@ -359,4 +377,3 @@ export const getMyFeatureResponses = async (token, { limit = 50, skip = 0 } = {}
     };
   }
 };
-
