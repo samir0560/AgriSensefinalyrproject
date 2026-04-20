@@ -5,7 +5,8 @@ const {
   logActivity, 
   updateAdminCredentials, 
   adminLogin,
-  getAdminProfile
+  getAdminProfile,
+  checkAdminStatus
 } = require('../controllers/adminController');
 
 // @route   GET api/admin/activities
@@ -15,7 +16,7 @@ router.get('/activities', getAllActivities);
 
 // @route   POST api/admin/activity
 // @desc    Log a new activity
-// @access  Public (or Private based on your needs)
+// @access  Public
 router.post('/activity', logActivity);
 
 // @route   PUT api/admin/credentials
@@ -32,5 +33,10 @@ router.post('/login', adminLogin);
 // @desc    Get admin profile
 // @access  Private
 router.get('/profile', getAdminProfile);
+
+// @route   GET api/admin/debug
+// @desc    Debug endpoint to check admin status
+// @access  Public (remove in production)
+router.get('/debug', checkAdminStatus);
 
 module.exports = router;
