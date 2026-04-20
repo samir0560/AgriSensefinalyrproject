@@ -149,11 +149,11 @@ const adminLogin = async (req, res) => {
     await admin.save();
 
     // Generate JWT token (optional, for authentication)
-    const token = jwt.sign(
-      { id: admin._id },
-      process.env.JWT_SECRET || 'fallback_secret_key',
-      { expiresIn: '7d' }
-    );
+const token = jwt.sign(
+  { id: admin._id },
+  process.env.JWT_SECRET,
+  { expiresIn: '7d' }
+);
 
     res.json({
       success: true,
@@ -204,25 +204,39 @@ const getAdminProfile = async (req, res) => {
   }
 };
 
-// Initialize default admin if none exists
 const initializeDefaultAdmin = async () => {
   try {
+    console.log("🔄 Checking admin...");
+
     const adminCount = await Admin.countDocuments();
+    console.log("Admin count:", adminCount);
+
+    console.log("ENV USER:", process.env.ADMIN_USERNAME);
+    console.log("ENV PASS:", process.env.ADMIN_PASSWORD);
 
     if (adminCount === 0) {
+      if (!process.env.ADMIN_USERNAME || !process.env.ADMIN_PASSWORD) {
+        console.log("❌ ADMIN env variables missing");
+        return;
+      }
+
+      console.log("⚡ Creating default admin...");
+
       const defaultAdmin = new Admin({
         username: process.env.ADMIN_USERNAME,
         password: process.env.ADMIN_PASSWORD
       });
 
       await defaultAdmin.save();
-      console.log('Default admin created from ENV');
+
+      console.log("✅ Default admin created");
+    } else {
+      console.log("ℹ️ Admin already exists");
     }
   } catch (error) {
-    console.error('Error initializing default admin:', error);
+    console.error('❌ Error initializing admin:', error);
   }
 };
-
 module.exports = {
   getAllActivities,
   logActivity,
