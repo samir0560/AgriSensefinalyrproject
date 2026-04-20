@@ -300,7 +300,7 @@ export const loginUser = async (email, password) => {
 
 export const getCurrentUser = async (token) => {
   try {
-    const response = await axios.get(`${API_BASE_URL}/api/auth/me`, {
+    const response = await axios.get(`${API_BASE_URL}/auth/me`, {
       headers: {
         Authorization: `Bearer ${token}`
       }
