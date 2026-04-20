@@ -11,6 +11,7 @@ const Disease = () => {
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [apiError, setApiError] = useState(null);
 
   const handleImageChange = (e) => {
     const file = e.target.files[0];
@@ -19,10 +20,10 @@ const Disease = () => {
       setPreview(URL.createObjectURL(file));
       setResult(null);
       setError(null);
+      setApiError(null);
     }
   };
 
-  // Convert file to base64
   const fileToBase64 = (file) => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -32,7 +33,6 @@ const Disease = () => {
     });
   };
 
-  // Show custom alert
   const showAlert = (message, isError = false) => {
     const alertDiv = document.createElement('div');
     alertDiv.style.cssText = `
@@ -90,14 +90,21 @@ const Disease = () => {
     }, 3000);
   };
 
-  // Check if image is a plant using Gemini
+  // Improved plant detection with better prompting
   const checkIfPlant = async (base64Image) => {
     const GEMINI_API_KEY = 'AIzaSyDfIe8hVFhX0lGIExWLr28VeGwN2qzFZmU';
     const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
     
-    const prompt = `Analyze this image and determine if it contains a plant, crop, tree, flower, vegetable, fruit, or any agricultural vegetation. 
-    Respond with ONLY ONE WORD: "YES" if it contains any plant material (including leaves, stems, flowers, fruits, vegetables, trees, crops), or "NO" if it does not contain any plant material (e.g., animals, people, buildings, empty soil, rocks, vehicles, etc.).
-    Be strict: Only respond with YES or NO, nothing else.`;
+    const prompt = `You are an agricultural expert. Look at this image carefully. 
+    Is there ANY plant, crop, tree, flower, vegetable, fruit, leaf, stem, root, or any part of a plant visible in this image?
+    
+    Respond with ONLY one word:
+    - "YES" if you see ANY plant material (even if it's diseased, damaged, or just a leaf)
+    - "NO" if there is absolutely NO plant material (people, animals, buildings, cars, soil without plants, rocks, sky, water, etc.)
+    
+    Be generous - if there's any green or plant-like structure, answer YES.
+    Only answer NO if it's completely unrelated to plants.
+    Your answer MUST be either YES or NO, nothing else.`;
     
     try {
       const response = await fetch(API_URL, {
@@ -116,42 +123,61 @@ const Disease = () => {
                 }
               }
             ]
-          }]
+          }],
+          generationConfig: {
+            temperature: 0.1,
+          }
         })
       });
       
       const data = await response.json();
       const answer = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim().toUpperCase();
+      console.log('Plant detection response:', answer);
       return answer === 'YES';
     } catch (error) {
       console.error('Error checking plant:', error);
-      return false;
+      // If API fails, assume it's a plant to allow processing
+      return true;
     }
   };
 
-  // Detect plant disease using Gemini - REAL DATA ONLY
+  // Detect plant disease with detailed information
   const detectPlantDisease = async (base64Image) => {
     const GEMINI_API_KEY = 'AIzaSyDfIe8hVFhX0lGIExWLr28VeGwN2qzFZmU';
     const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
     
-    const prompt = `You are an expert agricultural plant pathologist. Analyze this plant image and provide a REAL, ACCURATE disease diagnosis based on visible symptoms.
+    const prompt = `You are an expert plant pathologist. Analyze this plant image and provide a detailed disease diagnosis.
     
     Return ONLY valid JSON in this exact format (no other text):
     {
-      "disease": "actual disease name or 'Healthy - No Disease Detected'",
+      "disease_name": "exact name of the disease or 'Healthy Plant'",
+      "scientific_name": "scientific name of the pathogen if applicable",
+      "disease_type": "Fungal/Bacterial/Viral/Nutrient Deficiency/Physical Damage/Healthy",
+      "severity": "Mild/Moderate/Severe/None",
       "confidence": 85,
-      "description": "detailed description of visible symptoms on this specific plant",
-      "treatment": "specific treatment recommendations for this exact condition",
-      "symptoms_observed": ["symptom1", "symptom2", "symptom3"],
-      "severity": "Mild/Moderate/Severe"
+      "symptoms": ["symptom 1", "symptom 2", "symptom 3"],
+      "medicine_1": {
+        "name": "first medicine/fungicide name",
+        "type": "Chemical/Organic/Biological",
+        "application": "how to apply",
+        "dosage": "recommended dosage"
+      },
+      "medicine_2": {
+        "name": "second medicine/alternative treatment",
+        "type": "Chemical/Organic/Biological",
+        "application": "how to apply",
+        "dosage": "recommended dosage"
+      },
+      "prevention_tips": ["tip 1", "tip 2", "tip 3"],
+      "description": "detailed description of the disease and its effects"
     }
     
-    IMPORTANT: 
-    - Analyze the actual image and provide REAL diagnosis based on what you see
-    - Do NOT use generic responses
-    - If the plant appears healthy, indicate that clearly
-    - Provide specific, actionable advice
-    - Confidence should reflect your certainty in the diagnosis`;
+    IMPORTANT RULES:
+    - If the plant looks healthy, set disease_name to "Healthy Plant" and severity to "None"
+    - Always provide 2 different medicines/treatments (chemical and organic options when possible)
+    - Be specific and practical with medicine names
+    - Confidence should reflect your certainty (0-100)
+    - Return ONLY valid JSON, nothing else`;
     
     try {
       const response = await fetch(API_URL, {
@@ -180,7 +206,8 @@ const Disease = () => {
       });
       
       if (!response.ok) {
-        throw new Error(`API Error: ${response.status}`);
+        const errorData = await response.text();
+        throw new Error(`API Error ${response.status}: ${errorData}`);
       }
       
       const data = await response.json();
@@ -190,76 +217,60 @@ const Disease = () => {
         throw new Error('No response from Gemini API');
       }
       
+      console.log('Raw API response:', textResponse);
+      
       // Parse JSON from response
       let parsedResponse;
       try {
-        // Try to parse the response directly
         parsedResponse = JSON.parse(textResponse);
       } catch (e) {
-        // If response has extra text, extract JSON
         const jsonMatch = textResponse.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
           parsedResponse = JSON.parse(jsonMatch[0]);
         } else {
-          throw new Error('Invalid response format from API');
+          throw new Error('Invalid JSON response from API');
         }
-      }
-      
-      // Validate required fields
-      if (!parsedResponse.disease || !parsedResponse.description || !parsedResponse.treatment) {
-        throw new Error('Incomplete response from API');
       }
       
       return parsedResponse;
     } catch (error) {
-      console.error('Error detecting disease:', error);
-      throw new Error(`Disease detection failed: ${error.message}`);
+      console.error('Disease detection error:', error);
+      setApiError(`Gemini API Error: ${error.message}`);
+      throw error;
     }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!selectedImage) {
-      showAlert(t('imageRequired') || 'Please select an image', true);
+      showAlert('Please select an image first', true);
       return;
     }
     
     setLoading(true);
     setError(null);
+    setApiError(null);
     
     try {
-      // Convert image to base64
       const base64Image = await fileToBase64(selectedImage);
       
-      // First check if it's a plant
+      // Check if it's a plant with better tolerance
       showAlert('🔍 Analyzing image content...', false);
       const isPlant = await checkIfPlant(base64Image);
       
       if (!isPlant) {
-        showAlert('❌ This does not appear to be a plant or crop. Please upload an image of a plant, leaf, flower, fruit, or vegetable for disease detection.', true);
+        showAlert('⚠️ Could not detect clear plant material. Please upload a clearer image of a plant leaf or crop.', true);
         setLoading(false);
-        setSelectedImage(null);
-        setPreview(null);
-        setResult(null);
         return;
       }
       
-      // Detect disease using Gemini - REAL DATA
+      // Detect disease
       showAlert('🌱 Plant detected! Analyzing for diseases...', false);
       const diseaseResult = await detectPlantDisease(base64Image);
       
-      setResult({
-        disease: diseaseResult.disease,
-        confidence: diseaseResult.confidence,
-        description: diseaseResult.description,
-        treatment: diseaseResult.treatment,
-        symptoms_observed: diseaseResult.symptoms_observed || [],
-        severity: diseaseResult.severity || 'Not specified'
-      });
+      setResult(diseaseResult);
+      showAlert(`✅ Analysis complete! ${diseaseResult.disease_name === 'Healthy Plant' ? 'Your plant appears healthy! 🌿' : 'Disease identified. Check treatment below.'}`, false);
       
-      showAlert(`✅ Analysis complete! ${diseaseResult.disease === 'Healthy - No Disease Detected' ? 'Your plant appears healthy! 🌿' : 'Diagnosis ready. See recommendations below.'}`, false);
-      
-      // Log to backend if user is logged in
       if (token) {
         await logClientFeatureResult(token, {
           featureType: 'disease',
@@ -267,17 +278,14 @@ const Disease = () => {
             imageFileName: selectedImage.name,
             timestamp: new Date().toISOString()
           },
-          response: { 
-            success: true, 
-            data: diseaseResult 
-          }
+          response: { success: true, data: diseaseResult }
         });
       }
       
     } catch (err) {
       console.error('Error:', err);
       setError(err.message || 'Failed to analyze image');
-      showAlert(`❌ Error: ${err.message || 'Failed to analyze. Please try again with a clearer plant photo.'}`, true);
+      showAlert(`❌ Error: ${err.message || 'Analysis failed. Please try again.'}`, true);
     } finally {
       setLoading(false);
     }
@@ -288,71 +296,83 @@ const Disease = () => {
     setPreview(null);
     setResult(null);
     setError(null);
+    setApiError(null);
     document.getElementById('image-input').click();
+  };
+
+  // Get color based on disease type
+  const getDiseaseColor = (diseaseName, diseaseType) => {
+    if (diseaseName === 'Healthy Plant') return '#4caf50';
+    if (diseaseType === 'Fungal') return '#ff9800';
+    if (diseaseType === 'Bacterial') return '#f44336';
+    if (diseaseType === 'Viral') return '#9c27b0';
+    if (diseaseType === 'Nutrient Deficiency') return '#2196f3';
+    return '#e91e63';
   };
 
   return (
     <div className="disease-page" style={{ padding: '20px', maxWidth: '1200px', margin: '0 auto' }}>
       <div className="container">
-        <h1>{t('diseaseDetectionTitle') || '🌿 AI Plant Disease Detection'}</h1>
-        <p>{t('diseaseDetectionDesc') || 'Upload a clear photo of your plant for real-time disease diagnosis using Google Gemini AI'}</p>
+        <h1 style={{ textAlign: 'center', marginBottom: '16px' }}>🌿 AI Plant Disease Detection</h1>
+        <p style={{ textAlign: 'center', color: '#666', marginBottom: '32px' }}>
+          Upload a clear photo of your plant for real-time disease diagnosis using Google Gemini AI
+        </p>
         
-        <form onSubmit={handleSubmit} className="input-form">
-          <div className="form-group">
-            <label htmlFor="image">{t('uploadImage') || '📸 Upload Plant Image'}</label>
+        <form onSubmit={handleSubmit} style={{ maxWidth: '500px', margin: '0 auto' }}>
+          <div style={{ 
+            border: '2px dashed #ccc', 
+            borderRadius: '12px', 
+            padding: '32px',
+            textAlign: 'center',
+            backgroundColor: '#f9f9f9'
+          }}>
             <input
               type="file"
               id="image-input"
-              name="image"
               accept="image/*"
               onChange={handleImageChange}
-              required
-              style={{ 
-                display: 'block', 
-                padding: '10px', 
-                border: '2px dashed #ccc', 
-                borderRadius: '8px',
-                width: '100%',
-                cursor: 'pointer'
-              }}
+              style={{ display: 'none' }}
             />
-            <small style={{ color: '#666', display: 'block', marginTop: '8px' }}>
-              Supported formats: JPG, PNG, JPEG (Max 10MB)
-            </small>
+            <label htmlFor="image-input" style={{ cursor: 'pointer' }}>
+              <div style={{ fontSize: '48px', marginBottom: '16px' }}>📸</div>
+              <div style={{ fontSize: '16px', color: '#4caf50', fontWeight: 'bold' }}>
+                Click to Upload Image
+              </div>
+              <small style={{ color: '#999' }}>JPG, PNG, JPEG (Max 10MB)</small>
+            </label>
           </div>
+          
+          {preview && (
+            <div style={{ marginTop: '20px', textAlign: 'center' }}>
+              <img src={preview} alt="Preview" style={{ 
+                maxWidth: '100%', 
+                maxHeight: '200px', 
+                borderRadius: '8px',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+              }} />
+            </div>
+          )}
           
           <button 
             type="submit" 
-            className="btn btn-primary" 
-            disabled={loading}
+            disabled={loading || !selectedImage}
             style={{
+              width: '100%',
               backgroundColor: '#4caf50',
               color: 'white',
-              padding: '12px 24px',
+              padding: '14px',
               border: 'none',
               borderRadius: '8px',
-              cursor: loading ? 'not-allowed' : 'pointer',
+              cursor: (loading || !selectedImage) ? 'not-allowed' : 'pointer',
               fontSize: '16px',
-              marginTop: '16px',
-              opacity: loading ? 0.6 : 1
+              marginTop: '20px',
+              fontWeight: 'bold',
+              opacity: (loading || !selectedImage) ? 0.6 : 1
             }}
           >
-            {loading ? '🔍 Analyzing...' : '🔬 Detect Disease'}
+            {loading ? '🔍 Analyzing Plant...' : '🔬 Detect Disease'}
           </button>
         </form>
-        
-        {error && (
-          <div className="error" style={{
-            backgroundColor: '#ffebee',
-            color: '#c62828',
-            padding: '16px',
-            borderRadius: '8px',
-            marginTop: '20px',
-            borderLeft: '4px solid #c62828'
-          }}>
-            <strong>Error:</strong> {error}
-          </div>
-        )}
         
         {loading && (
           <div style={{ textAlign: 'center', marginTop: '40px' }}>
@@ -375,20 +395,43 @@ const Disease = () => {
           </div>
         )}
         
-        {preview && !result && !loading && (
-          <div className="image-preview" style={{ marginTop: '30px' }}>
-            <h2>{t('selectedImage') || 'Selected Image'}</h2>
-            <img src={preview} alt="Preview" style={{ 
-              maxWidth: '100%', 
-              maxHeight: '400px', 
-              borderRadius: '8px',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-            }} />
+        {apiError && (
+          <div style={{ 
+            marginTop: '20px',
+            padding: '16px',
+            backgroundColor: '#ffebee',
+            borderRadius: '8px',
+            borderLeft: '4px solid #f44336'
+          }}>
+            <strong style={{ color: '#c62828' }}>⚠️ API Error:</strong>
+            <p style={{ marginTop: '8px', color: '#333' }}>{apiError}</p>
+            <details style={{ marginTop: '8px' }}>
+              <summary style={{ cursor: 'pointer', color: '#666' }}>Troubleshooting Tips</summary>
+              <ul style={{ marginTop: '8px', paddingLeft: '20px' }}>
+                <li>Check your internet connection</li>
+                <li>Verify Gemini API key is valid</li>
+                <li>Try uploading a clearer image</li>
+                <li>Image should be less than 5MB</li>
+              </ul>
+            </details>
+          </div>
+        )}
+        
+        {error && !apiError && (
+          <div style={{
+            marginTop: '20px',
+            padding: '16px',
+            backgroundColor: '#ffebee',
+            borderRadius: '8px',
+            borderLeft: '4px solid #f44336',
+            color: '#c62828'
+          }}>
+            <strong>Error:</strong> {error}
           </div>
         )}
         
         {result && (
-          <div className="result" style={{ marginTop: '40px' }}>
+          <div style={{ marginTop: '40px' }}>
             <div style={{ 
               display: 'flex', 
               justifyContent: 'space-between', 
@@ -397,10 +440,9 @@ const Disease = () => {
               flexWrap: 'wrap',
               gap: '10px'
             }}>
-              <h2 style={{ margin: 0 }}>{t('detectionResult') || '📋 Diagnosis Results'}</h2>
+              <h2 style={{ margin: 0 }}>📋 Diagnosis Results</h2>
               <button 
                 onClick={handleUploadNew}
-                className="btn btn-secondary"
                 style={{
                   backgroundColor: '#2196f3',
                   color: 'white',
@@ -415,98 +457,244 @@ const Disease = () => {
               </button>
             </div>
             
-            <div className="card" style={{ 
-              marginBottom: '1rem', 
-              padding: '24px', 
-              borderRadius: '12px', 
-              boxShadow: '0 4px 16px rgba(0,0,0,0.1)',
-              backgroundColor: 'white'
+            {/* Disease Name with Color */}
+            <div style={{
+              padding: '20px',
+              borderRadius: '12px',
+              backgroundColor: getDiseaseColor(result.disease_name, result.disease_type),
+              color: 'white',
+              marginBottom: '20px',
+              textAlign: 'center'
             }}>
-              <div style={{
-                padding: '16px',
-                borderRadius: '8px',
-                backgroundColor: result.disease === 'Healthy - No Disease Detected' ? '#e8f5e9' : '#fff3e0',
-                marginBottom: '20px'
-              }}>
-                <h3 style={{ 
-                  color: result.disease === 'Healthy - No Disease Detected' ? '#2e7d32' : '#e65100', 
-                  marginBottom: '8px',
-                  fontSize: '24px'
-                }}>
-                  {result.disease === 'Healthy - No Disease Detected' ? '✅ ' : '⚠️ '}
-                  {result.disease}
-                </h3>
-                
-                {result.severity !== 'Not specified' && result.disease !== 'Healthy - No Disease Detected' && (
-                  <p><strong>Severity Level:</strong> 
-                    <span style={{
-                      display: 'inline-block',
-                      marginLeft: '8px',
-                      padding: '4px 12px',
-                      borderRadius: '20px',
-                      backgroundColor: result.severity === 'Mild' ? '#4caf50' : result.severity === 'Moderate' ? '#ff9800' : '#f44336',
-                      color: 'white',
-                      fontSize: '14px'
-                    }}>
-                      {result.severity}
-                    </span>
-                  </p>
-                )}
-                
-                <p><strong>Confidence Level:</strong> 
-                  <span style={{ 
-                    display: 'inline-block',
-                    marginLeft: '8px',
-                    padding: '4px 12px',
-                    backgroundColor: result.confidence > 80 ? '#4caf50' : result.confidence > 60 ? '#ff9800' : '#f44336',
-                    color: 'white',
-                    borderRadius: '20px',
-                    fontSize: '14px'
-                  }}>
-                    {result.confidence}%
-                  </span>
-                </p>
-              </div>
-              
-              {result.symptoms_observed && result.symptoms_observed.length > 0 && (
-                <div style={{ marginBottom: '20px' }}>
-                  <strong>Symptoms Observed:</strong>
-                  <ul style={{ marginTop: '8px', paddingLeft: '20px' }}>
-                    {result.symptoms_observed.map((symptom, index) => (
-                      <li key={index} style={{ marginBottom: '4px' }}>{symptom}</li>
-                    ))}
-                  </ul>
-                </div>
+              <h2 style={{ margin: 0, fontSize: '28px' }}>
+                {result.disease_name === 'Healthy Plant' ? '✅ ' : '⚠️ '}
+                {result.disease_name}
+              </h2>
+              {result.scientific_name && result.disease_name !== 'Healthy Plant' && (
+                <p style={{ marginTop: '8px', opacity: 0.9 }}>({result.scientific_name})</p>
               )}
-              
-              <p style={{ marginBottom: '16px', lineHeight: '1.6' }}>
-                <strong>📖 Description:</strong><br />
-                {result.description}
-              </p>
-              
-              <p style={{ marginBottom: '16px', lineHeight: '1.6' }}>
-                <strong>💊 Treatment Recommendations:</strong><br />
-                {result.treatment}
-              </p>
-              
-              <div style={{ 
-                marginTop: '20px',
-                padding: '12px',
-                backgroundColor: '#f5f5f5',
-                borderRadius: '8px',
-                fontSize: '14px',
-                color: '#666'
-              }}>
-                <strong>ℹ️ Note:</strong> This analysis is generated by AI and should be verified by a professional agronomist for critical decisions.
-              </div>
             </div>
             
+            {/* Main Information Table */}
+            <table style={{
+              width: '100%',
+              borderCollapse: 'collapse',
+              marginBottom: '20px',
+              backgroundColor: 'white',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+              borderRadius: '8px',
+              overflow: 'hidden'
+            }}>
+              <tbody>
+                <tr style={{ borderBottom: '1px solid #ddd' }}>
+                  <td style={{ padding: '12px', fontWeight: 'bold', backgroundColor: '#f5f5f5', width: '30%' }}>Disease Type</td>
+                  <td style={{ padding: '12px' }}>
+                    <span style={{
+                      padding: '4px 12px',
+                      borderRadius: '20px',
+                      backgroundColor: result.disease_type === 'Fungal' ? '#fff3e0' : 
+                                     result.disease_type === 'Bacterial' ? '#ffebee' :
+                                     result.disease_type === 'Viral' ? '#f3e5f5' :
+                                     result.disease_type === 'Nutrient Deficiency' ? '#e3f2fd' : '#e8f5e9',
+                      color: getDiseaseColor(result.disease_name, result.disease_type)
+                    }}>
+                      {result.disease_type || 'Not specified'}
+                    </span>
+                  </td>
+                </tr>
+                <tr style={{ borderBottom: '1px solid #ddd' }}>
+                  <td style={{ padding: '12px', fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>Severity Level</td>
+                  <td style={{ padding: '12px' }}>
+                    <span style={{
+                      padding: '4px 12px',
+                      borderRadius: '20px',
+                      backgroundColor: result.severity === 'Mild' ? '#c8e6c9' :
+                                     result.severity === 'Moderate' ? '#ffe0b2' :
+                                     result.severity === 'Severe' ? '#ffcdd2' : '#e0e0e0',
+                      color: result.severity === 'Mild' ? '#2e7d32' :
+                             result.severity === 'Moderate' ? '#e65100' :
+                             result.severity === 'Severe' ? '#c62828' : '#666'
+                    }}>
+                      {result.severity || 'Unknown'}
+                    </span>
+                  </td>
+                </tr>
+                <tr style={{ borderBottom: '1px solid #ddd' }}>
+                  <td style={{ padding: '12px', fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>Confidence Level</td>
+                  <td style={{ padding: '12px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <div style={{ 
+                        flex: 1, 
+                        height: '8px', 
+                        backgroundColor: '#e0e0e0', 
+                        borderRadius: '4px',
+                        overflow: 'hidden'
+                      }}>
+                        <div style={{ 
+                          width: `${result.confidence}%`, 
+                          height: '100%', 
+                          backgroundColor: result.confidence > 80 ? '#4caf50' : 
+                                         result.confidence > 60 ? '#ff9800' : '#f44336',
+                          borderRadius: '4px'
+                        }}></div>
+                      </div>
+                      <span>{result.confidence}%</span>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            
+            {/* Symptoms Table */}
+            {result.symptoms && result.symptoms.length > 0 && (
+              <div style={{ marginBottom: '20px' }}>
+                <h3>🌿 Observed Symptoms</h3>
+                <table style={{
+                  width: '100%',
+                  borderCollapse: 'collapse',
+                  backgroundColor: 'white',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                  borderRadius: '8px',
+                  overflow: 'hidden'
+                }}>
+                  <thead style={{ backgroundColor: '#f5f5f5' }}>
+                    <tr>
+                      <th style={{ padding: '12px', textAlign: 'left' }}>#</th>
+                      <th style={{ padding: '12px', textAlign: 'left' }}>Symptom</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {result.symptoms.map((symptom, index) => (
+                      <tr key={index} style={{ borderBottom: '1px solid #eee' }}>
+                        <td style={{ padding: '12px', width: '50px' }}>{index + 1}</td>
+                        <td style={{ padding: '12px' }}>{symptom}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            
+            {/* Medicine 1 Table */}
+            {result.medicine_1 && result.disease_name !== 'Healthy Plant' && (
+              <div style={{ marginBottom: '20px' }}>
+                <h3 style={{ color: '#4caf50' }}>💊 Treatment Option 1</h3>
+                <table style={{
+                  width: '100%',
+                  borderCollapse: 'collapse',
+                  backgroundColor: 'white',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                  borderRadius: '8px',
+                  overflow: 'hidden'
+                }}>
+                  <tbody>
+                    <tr style={{ borderBottom: '1px solid #ddd' }}>
+                      <td style={{ padding: '12px', fontWeight: 'bold', backgroundColor: '#f5f5f5', width: '30%' }}>Medicine Name</td>
+                      <td style={{ padding: '12px' }}><strong>{result.medicine_1.name}</strong></td>
+                    </tr>
+                    <tr style={{ borderBottom: '1px solid #ddd' }}>
+                      <td style={{ padding: '12px', fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>Type</td>
+                      <td style={{ padding: '12px' }}>
+                        <span style={{
+                          padding: '4px 12px',
+                          borderRadius: '20px',
+                          backgroundColor: result.medicine_1.type === 'Organic' ? '#e8f5e9' : '#fff3e0',
+                          color: result.medicine_1.type === 'Organic' ? '#2e7d32' : '#e65100'
+                        }}>
+                          {result.medicine_1.type}
+                        </span>
+                      </td>
+                    </tr>
+                    <tr style={{ borderBottom: '1px solid #ddd' }}>
+                      <td style={{ padding: '12px', fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>Application Method</td>
+                      <td style={{ padding: '12px' }}>{result.medicine_1.application}</td>
+                    </tr>
+                    <tr>
+                      <td style={{ padding: '12px', fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>Dosage</td>
+                      <td style={{ padding: '12px' }}>{result.medicine_1.dosage}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
+            
+            {/* Medicine 2 Table */}
+            {result.medicine_2 && result.disease_name !== 'Healthy Plant' && (
+              <div style={{ marginBottom: '20px' }}>
+                <h3 style={{ color: '#ff9800' }}>🌱 Treatment Option 2 (Alternative)</h3>
+                <table style={{
+                  width: '100%',
+                  borderCollapse: 'collapse',
+                  backgroundColor: 'white',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                  borderRadius: '8px',
+                  overflow: 'hidden'
+                }}>
+                  <tbody>
+                    <tr style={{ borderBottom: '1px solid #ddd' }}>
+                      <td style={{ padding: '12px', fontWeight: 'bold', backgroundColor: '#f5f5f5', width: '30%' }}>Medicine Name</td>
+                      <td style={{ padding: '12px' }}><strong>{result.medicine_2.name}</strong></td>
+                    </tr>
+                    <tr style={{ borderBottom: '1px solid #ddd' }}>
+                      <td style={{ padding: '12px', fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>Type</td>
+                      <td style={{ padding: '12px' }}>
+                        <span style={{
+                          padding: '4px 12px',
+                          borderRadius: '20px',
+                          backgroundColor: result.medicine_2.type === 'Organic' ? '#e8f5e9' : '#fff3e0',
+                          color: result.medicine_2.type === 'Organic' ? '#2e7d32' : '#e65100'
+                        }}>
+                          {result.medicine_2.type}
+                        </span>
+                      </td>
+                    </tr>
+                    <tr style={{ borderBottom: '1px solid #ddd' }}>
+                      <td style={{ padding: '12px', fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>Application Method</td>
+                      <td style={{ padding: '12px' }}>{result.medicine_2.application}</td>
+                    </tr>
+                    <tr>
+                      <td style={{ padding: '12px', fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>Dosage</td>
+                      <td style={{ padding: '12px' }}>{result.medicine_2.dosage}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
+            
+            {/* Description */}
+            <div style={{
+              padding: '16px',
+              backgroundColor: '#f5f5f5',
+              borderRadius: '8px',
+              marginBottom: '20px'
+            }}>
+              <strong>📖 Description:</strong>
+              <p style={{ marginTop: '8px', lineHeight: '1.6' }}>{result.description}</p>
+            </div>
+            
+            {/* Prevention Tips */}
+            {result.prevention_tips && result.prevention_tips.length > 0 && (
+              <div style={{
+                padding: '16px',
+                backgroundColor: '#e8f5e9',
+                borderRadius: '8px',
+                borderLeft: '4px solid #4caf50'
+              }}>
+                <strong>🛡️ Prevention Tips:</strong>
+                <ul style={{ marginTop: '8px', paddingLeft: '20px' }}>
+                  {result.prevention_tips.map((tip, index) => (
+                    <li key={index} style={{ marginBottom: '4px' }}>{tip}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            
             {preview && (
-              <div className="image-preview" style={{ marginTop: '20px', textAlign: 'center' }}>
+              <div style={{ marginTop: '20px', textAlign: 'center' }}>
                 <h3>Analyzed Image</h3>
                 <img src={preview} alt="Analyzed plant" style={{ 
                   maxWidth: '100%', 
-                  maxHeight: '300px', 
+                  maxHeight: '250px', 
                   borderRadius: '8px',
                   boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
                 }} />
