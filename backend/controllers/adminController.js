@@ -208,15 +208,15 @@ const getAdminProfile = async (req, res) => {
 const initializeDefaultAdmin = async () => {
   try {
     const adminCount = await Admin.countDocuments();
-    
+
     if (adminCount === 0) {
       const defaultAdmin = new Admin({
-        username: 'admin',
-        password: 'admin123' // This will be hashed by the pre-save middleware
+        username: process.env.ADMIN_USERNAME,
+        password: process.env.ADMIN_PASSWORD
       });
-      
+
       await defaultAdmin.save();
-      console.log('Default admin user created: username: admin, password: admin123');
+      console.log('Default admin created from ENV');
     }
   } catch (error) {
     console.error('Error initializing default admin:', error);
