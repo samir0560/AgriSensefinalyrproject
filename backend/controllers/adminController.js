@@ -6,11 +6,10 @@ const jwt = require('jsonwebtoken');
 // Get all activity logs
 const getAllActivities = async (req, res) => {
   try {
-    // Get all activities from the last 24 hours (MongoDB TTL index will auto-delete older ones)
     const activities = await ActivityLog.find({})
       .populate('userId', 'username')
       .sort({ timestamp: -1 })
-      .limit(100); // Limit to last 100 activities
+      .limit(100);
 
     res.json({
       success: true,
@@ -30,7 +29,6 @@ const logActivity = async (req, res) => {
   try {
     const { type, description } = req.body;
     
-    // Validate required fields
     if (!type || !description) {
       return res.status(400).json({
         success: false,
@@ -38,11 +36,9 @@ const logActivity = async (req, res) => {
       });
     }
 
-    // Get user IP and user agent from request
     const ipAddress = req.ip || req.connection.remoteAddress;
     const userAgent = req.get('User-Agent');
 
-    // Create new activity log
     const activity = new ActivityLog({
       type,
       description,
@@ -78,19 +74,16 @@ const updateAdminCredentials = async (req, res) => {
       });
     }
 
-    // Find the admin (assuming we're updating the first/only admin)
     let admin = await Admin.findOne();
     
     if (!admin) {
-      // If no admin exists, create one
       admin = new Admin({
         username,
         password
       });
     } else {
-      // Update existing admin
       admin.username = username;
-      admin.password = password; // This will be hashed by the pre-save middleware
+      admin.password = password;
     }
 
     await admin.save();
@@ -112,10 +105,13 @@ const updateAdminCredentials = async (req, res) => {
     });
   }
 };
-// Admin login
+
+// Admin login - FIXED VERSION
 const adminLogin = async (req, res) => {
   try {
     const { username, password } = req.body;
+
+    console.log('Login attempt for username:', username);
 
     // Validate input
     if (!username || !password) {
@@ -128,39 +124,49 @@ const adminLogin = async (req, res) => {
     // Find admin by username
     const admin = await Admin.findOne({ username });
     if (!admin) {
+      console.log('Admin not found:', username);
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials'
       });
     }
 
+    console.log('Admin found, comparing password...');
+
     // Compare password
     const isMatch = await admin.comparePassword(password);
     if (!isMatch) {
+      console.log('Password mismatch for:', username);
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials'
       });
     }
+
+    console.log('Password matched for:', username);
 
     // Update last login
     admin.lastLogin = Date.now();
     await admin.save();
 
-    // Generate JWT token only if JWT_SECRET is set
-    let token = null;
-    if (process.env.JWT_SECRET) {
-      token = jwt.sign(
-        { id: admin._id, username: admin.username },
-        process.env.JWT_SECRET,
-        { expiresIn: '7d' }
-      );
+    // Generate JWT token - FIX: Always generate token, use default secret if not set
+    const jwtSecret = process.env.JWT_SECRET || 'agrisense_default_secret_key_2024';
+    if (!process.env.JWT_SECRET) {
+      console.warn('⚠️ JWT_SECRET not set in environment variables. Using default secret. Please set JWT_SECRET in production!');
     }
+    
+    const token = jwt.sign(
+      { id: admin._id, username: admin.username },
+      jwtSecret,
+      { expiresIn: '7d' }
+    );
+
+    console.log('Login successful for:', username);
 
     res.json({
       success: true,
       message: 'Login successful',
-      token, // Can be null if JWT_SECRET not set
+      token,
       admin: {
         id: admin._id,
         username: admin.username,
@@ -169,10 +175,11 @@ const adminLogin = async (req, res) => {
     });
   } catch (error) {
     console.error('Error during admin login:', error);
+    console.error('Stack trace:', error.stack);
     res.status(500).json({
       success: false,
       message: 'Server error during login',
-      error: error.message // Include error message for debugging
+      error: error.message
     });
   }
 };
@@ -207,44 +214,87 @@ const getAdminProfile = async (req, res) => {
   }
 };
 
+// Initialize default admin - FIXED VERSION
 const initializeDefaultAdmin = async () => {
   try {
     console.log("🔄 Checking admin...");
-
+    
+    // Make sure Admin model is accessible
+    if (!Admin) {
+      console.error("❌ Admin model not loaded");
+      return;
+    }
+    
     const adminCount = await Admin.countDocuments();
     console.log("Admin count:", adminCount);
 
     console.log("ENV USER:", process.env.ADMIN_USERNAME);
-    console.log("ENV PASS:", process.env.ADMIN_PASSWORD);
+    console.log("ENV PASS SET:", process.env.ADMIN_PASSWORD ? "Yes" : "No");
 
     if (adminCount === 0) {
+      // Use environment variables or fallback defaults
+      const defaultUsername = process.env.ADMIN_USERNAME || 'admin';
+      const defaultPassword = process.env.ADMIN_PASSWORD || 'admin123';
+      
       if (!process.env.ADMIN_USERNAME || !process.env.ADMIN_PASSWORD) {
-        console.log("❌ ADMIN env variables missing");
-        return;
+        console.log(`⚠️ Using default credentials: ${defaultUsername}/${defaultPassword}`);
+        console.log("⚠️ Please set ADMIN_USERNAME and ADMIN_PASSWORD environment variables for security!");
       }
 
       console.log("⚡ Creating default admin...");
 
       const defaultAdmin = new Admin({
-        username: process.env.ADMIN_USERNAME,
-        password: process.env.ADMIN_PASSWORD
+        username: defaultUsername,
+        password: defaultPassword
       });
 
       await defaultAdmin.save();
-
-      console.log("✅ Default admin created");
+      console.log(`✅ Default admin created with username: ${defaultUsername}`);
+      console.log(`✅ You can now login with username: ${defaultUsername} and password: ${defaultPassword}`);
     } else {
       console.log("ℹ️ Admin already exists");
+      // Log existing admin usernames (without passwords)
+      const admins = await Admin.find({}).select('username');
+      console.log("Existing admins:", admins.map(a => a.username));
     }
   } catch (error) {
     console.error('❌ Error initializing admin:', error);
+    console.error('Error details:', error.message);
+    console.error('Stack trace:', error.stack);
   }
 };
+
+// Debug function to check admin status (for troubleshooting)
+const checkAdminStatus = async (req, res) => {
+  try {
+    const adminCount = await Admin.countDocuments();
+    const admins = await Admin.find({}).select('username createdAt lastLogin');
+    
+    res.json({
+      success: true,
+      adminCount,
+      admins: admins,
+      environment: {
+        NODE_ENV: process.env.NODE_ENV,
+        JWT_SECRET_SET: !!process.env.JWT_SECRET,
+        ADMIN_USERNAME_SET: !!process.env.ADMIN_USERNAME,
+        ADMIN_PASSWORD_SET: !!process.env.ADMIN_PASSWORD
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   getAllActivities,
   logActivity,
   updateAdminCredentials,
   adminLogin,
   getAdminProfile,
-  initializeDefaultAdmin
+  initializeDefaultAdmin,
+  checkAdminStatus
 };
